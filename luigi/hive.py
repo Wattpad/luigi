@@ -113,7 +113,7 @@ class HiveCommandClient(HiveClient):
                 return line.split("\t")[1]
 
     def table_exists(self, table, database='default', partition={}):
-        cmd = "use {0}; describe {1}".format(database, table)
+        cmd = "use {0}; show tables like '{1}'".format(database, table)
         if partition:
             cmd = "use {0}; show partitions {1} partition ({2})".format(database, table, self.partition_spec(partition))
 

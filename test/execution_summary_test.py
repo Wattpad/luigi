@@ -842,3 +842,87 @@ class ExecutionSummaryTest(LuigiTestCase):
         self.run_task(Foo())
         s = self.summary()
         self.assertIn('yellow', s)
+
+    def test_with_dict_dependency(self):
+        """ Just test that it doesn't crash with dict params in dependencies """
+
+        args = dict(start=datetime.date(1998, 3, 23), num=3)
+
+        class Bar(RunOnceTask):
+            args = luigi.DictParameter()
+
+        class Foo(luigi.Task):
+            def requires(self):
+                for i in range(10):
+                    new_dict = args.copy()
+                    new_dict['start'] = str(new_dict['start'] + datetime.timedelta(days=i))
+                    yield Bar(args=new_dict)
+
+        self.run_task(Foo())
+        d = self.summary_dict()
+        exp_set = set()
+        for i in range(10):
+            new_dict = args.copy()
+            new_dict['start'] = str(new_dict['start'] + datetime.timedelta(days=i))
+            exp_set.add(Bar(new_dict))
+        exp_set.add(Foo())
+        self.assertEqual(exp_set, d['completed'])
+        s = self.summary()
+        self.assertIn('"num": 3', s)
+        self.assertIn('"start": "1998-0', s)
+        self.assertIn('Scheduled 11 tasks', s)
+        self.assertIn('Luigi Execution Summary', s)
+        self.assertNotIn('00:00:00', s)
+        self.assertNotIn('\n\n\n', s)
+
+    def test_with_dict_argument(self):
+        """ Just test that it doesn't crash with dict params """
+
+        args = dict(start=str(datetime.date(1998, 3, 23)), num=3)
+
+        class Bar(RunOnceTask):
+            args = luigi.DictParameter()
+
+        self.run_task(Bar(args=args))
+        d = self.summary_dict()
+        exp_set = set()
+        exp_set.add(Bar(args=args))
+        self.assertEqual(exp_set, d['completed'])
+        s = self.summary()
+        self.assertIn('"num": 3', s)
+        self.assertIn('"start": "1998-0', s)
+        self.assertIn('Scheduled 1 task', s)
+        self.assertIn('Luigi Execution Summary', s)
+        self.assertNotIn('00:00:00', s)
+        self.assertNotIn('\n\n\n', s)
+
+    """
+    Test that a task once crashing and then succeeding should be counted as no failure.
+    """
+    def test_status_with_task_retry(self):
+        class Foo(luigi.Task):
+            run_count = 0
+
+            def run(self):
+                self.run_count += 1
+                if self.run_count == 1:
+                    raise ValueError()
+
+            def complete(self):
+                return self.run_count > 0
+
+        self.run_task(Foo())
+        self.run_task(Foo())
+        d = self.summary_dict()
+        self.assertEqual({Foo()}, d['completed'])
+        self.assertEqual({Foo()}, d['ever_failed'])
+        self.assertFalse(d['failed'])
+        self.assertFalse(d['upstream_failure'])
+        self.assertFalse(d['upstream_missing_dependency'])
+        self.assertFalse(d['run_by_other_worker'])
+        self.assertFalse(d['still_pending_ext'])
+        s = self.summary()
+        self.assertIn('Scheduled 1 task', s)
+        self.assertIn('Luigi Execution Summary', s)
+        self.assertNotIn('ever failed', s)
+        self.assertIn('\n\nThis progress looks :) because there were failed tasks but they all suceeded in a retry', s)

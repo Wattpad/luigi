@@ -69,7 +69,3 @@ before_script:
 script:
   - tox --version
   - ./scripts/ci/conditional_tox.sh
-
-branches:
-  only:
-    - master
